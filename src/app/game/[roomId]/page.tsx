@@ -10,6 +10,7 @@ import PropertyModal from "@/components/PropertyModal";
 import type { GameStateResponse, PlayerData } from "@/lib/types";
 import type { GameState } from "@/lib/game-engine";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { formatCurrency } from "@/lib/formatters";
 
 export default function GamePage({
   params,
@@ -195,6 +196,22 @@ export default function GamePage({
     }
   }
 
+  async function updateHouseRule(
+    key:
+      | "auctionsEnabled"
+      | "freeParkingJackpot"
+      | "doubleSalaryOnGo"
+      | "quickMode"
+      | "speedDieEnabled",
+    value: boolean
+  ) {
+    await handleAction("update-house-rules", {
+      houseRules: {
+        [key]: value,
+      },
+    });
+  }
+
   if (sessionExpired) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -343,6 +360,83 @@ export default function GamePage({
             </div>
           </div>
 
+          <div className="bg-emerald-900/60 rounded-2xl p-4 mb-4 border border-emerald-700/50">
+            <h3 className="text-sm font-bold text-emerald-300 mb-3">
+              House Rules
+            </h3>
+            <div className="space-y-2">
+              {[
+                {
+                  key: "auctionsEnabled" as const,
+                  label: "Auction skipped properties",
+                  description: "Official Monopoly rule",
+                },
+                {
+                  key: "freeParkingJackpot" as const,
+                  label: "Free Parking jackpot",
+                  description: "Collect pooled taxes and fees",
+                },
+                {
+                  key: "doubleSalaryOnGo" as const,
+                  label: "Double salary on GO",
+                  description: "Land directly on GO for extra salary",
+                },
+                {
+                  key: "quickMode" as const,
+                  label: "Quick Mode",
+                  description: "Faster economy with lower starting cash and stronger rent",
+                },
+                {
+                  key: "speedDieEnabled" as const,
+                  label: "Speed Die",
+                  description: "Add a third movement die in 3+ player games",
+                },
+              ].map((rule) => (
+                <div
+                  key={rule.key}
+                  className="flex items-center justify-between gap-3 rounded-xl bg-emerald-800/45 px-3 py-2.5"
+                >
+                  <div>
+                    <div className="text-sm font-medium text-amber-50">
+                      {rule.label}
+                    </div>
+                    <div className="text-[11px] text-emerald-200/70">
+                      {rule.description}
+                    </div>
+                  </div>
+                  {isHost ? (
+                    <button
+                      onClick={() =>
+                        void updateHouseRule(
+                          rule.key,
+                          !gameState.houseRules[rule.key]
+                        )
+                      }
+                      disabled={loading}
+                      className={`min-w-14 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                        gameState.houseRules[rule.key]
+                          ? "bg-amber-500 text-gray-950"
+                          : "bg-slate-700 text-slate-200"
+                      }`}
+                    >
+                      {gameState.houseRules[rule.key] ? "ON" : "OFF"}
+                    </button>
+                  ) : (
+                    <span
+                      className={`min-w-14 text-center px-3 py-1.5 rounded-full text-xs font-bold ${
+                        gameState.houseRules[rule.key]
+                          ? "bg-amber-500/20 text-amber-300"
+                          : "bg-slate-700/70 text-slate-300"
+                      }`}
+                    >
+                      {gameState.houseRules[rule.key] ? "ON" : "OFF"}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* Start button */}
           {isHost && (
             <button
@@ -391,7 +485,7 @@ export default function GamePage({
                 <span className="font-bold">{winner.name}</span> wins!
               </p>
               <p className="text-amber-300 mt-1">
-                Final balance: ${winner.money.toLocaleString()}
+                Final balance: {formatCurrency(winner.money)}
               </p>
             </div>
           )}
@@ -412,7 +506,7 @@ export default function GamePage({
                   />
                   <span className="flex-1 font-medium text-sm">{p.name}</span>
                   <span className="text-amber-400 font-bold text-sm">
-                    ${p.money.toLocaleString()}
+                    {formatCurrency(p.money)}
                   </span>
                 </div>
               ))}
@@ -432,17 +526,17 @@ export default function GamePage({
   return (
     <div className="min-h-screen flex flex-col">
       {/* Top bar */}
-      <div className="bg-emerald-950/80 backdrop-blur border-b border-emerald-800 px-3 py-2 flex items-center justify-between">
+      <div className="bg-emerald-950/85 backdrop-blur border-b border-amber-500/10 px-3 py-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-lg">🎲</span>
-          <span className="font-bold text-amber-400 text-sm">MONOPOLY</span>
+          <span className="text-xs font-black text-amber-200/80">IN</span>
+          <span className="font-bold text-amber-400 text-sm tracking-[0.25em]">MONOPOLY INDIA</span>
         </div>
         <div className="bg-emerald-800/80 px-3 py-1 rounded-full">
           <span className="text-xs text-emerald-300 font-mono">{room.code}</span>
         </div>
         {myPlayer && (
           <div className="text-amber-400 font-bold text-sm">
-            ${myPlayer.money.toLocaleString()}
+            {formatCurrency(myPlayer.money)}
           </div>
         )}
       </div>
@@ -469,6 +563,12 @@ export default function GamePage({
             🎯 Your turn!{" "}
             {gameState?.phase === "roll"
               ? "Roll the dice"
+              : gameState?.phase === "speed-die-choice"
+              ? "Resolve your Speed Die choice"
+              : gameState?.phase === "trade-response"
+              ? "Trade response pending"
+              : gameState?.phase === "auction"
+              ? "Auction is live"
               : gameState?.phase === "buy-decision"
               ? "Buy or pass?"
               : gameState?.phase === "end-turn"
@@ -476,7 +576,14 @@ export default function GamePage({
               : ""}
           </>
         ) : (
-          <>⏳ {currentTurnPlayer?.name}&apos;s turn</>
+          <>
+            ⏳ {currentTurnPlayer?.name}&apos;s turn
+            {gameState?.phase === "auction"
+              ? " • auction in progress"
+              : gameState?.phase === "trade-response"
+              ? " • trade response pending"
+              : ""}
+          </>
         )}
       </div>
 
@@ -540,6 +647,7 @@ export default function GamePage({
             <GameControls
               roomId={roomId}
               playerId={playerId || ""}
+              players={players}
               isMyTurn={isMyTurn}
               currentPlayer={myPlayer}
               gameState={gameState}
@@ -563,6 +671,7 @@ export default function GamePage({
                 <GameControls
                   roomId={roomId}
                   playerId={playerId || ""}
+                  players={players}
                   isMyTurn={isMyTurn}
                   currentPlayer={myPlayer}
                   gameState={gameState}

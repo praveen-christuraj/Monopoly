@@ -1,11 +1,12 @@
 @import "tailwindcss";
 
 @keyframes diceRoll {
-  0% { transform: rotate(0deg) scale(1); }
-  25% { transform: rotate(90deg) scale(1.2); }
-  50% { transform: rotate(180deg) scale(1); }
-  75% { transform: rotate(270deg) scale(1.2); }
-  100% { transform: rotate(360deg) scale(1); }
+  0% { transform: rotateX(0deg) rotateY(0deg) scale(1); }
+  20% { transform: rotateX(180deg) rotateY(90deg) scale(1.08); }
+  40% { transform: rotateX(260deg) rotateY(180deg) scale(1); }
+  60% { transform: rotateX(360deg) rotateY(260deg) scale(1.1); }
+  80% { transform: rotateX(420deg) rotateY(320deg) scale(0.98); }
+  100% { transform: rotateX(540deg) rotateY(360deg) scale(1); }
 }
 
 @keyframes fadeIn {
@@ -28,8 +29,29 @@
   50% { transform: translateY(-6px); }
 }
 
+@keyframes tokenHop {
+  0% { transform: translateY(0) scale(1); }
+  35% { transform: translateY(-10px) scale(1.06); }
+  65% { transform: translateY(-3px) scale(0.98); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+@keyframes shimmerSweep {
+  0% { transform: translateX(-120%) rotate(18deg); }
+  100% { transform: translateX(180%) rotate(18deg); }
+}
+
+@keyframes boardGlow {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50% { opacity: 0.9; transform: scale(1.03); }
+}
+
 .animate-dice-roll {
   animation: diceRoll 0.6s ease-in-out;
+}
+
+.animate-dice-tumble {
+  animation: diceRoll 0.85s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .animate-fade-in {
@@ -46,6 +68,148 @@
 
 .animate-bounce-token {
   animation: bounce-token 0.5s ease-in-out;
+}
+
+.animate-token-hop {
+  animation: tokenHop 0.55s ease-in-out;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  min-height: 100%;
+  background:
+    radial-gradient(circle at top, rgba(250, 204, 21, 0.14), transparent 30%),
+    radial-gradient(circle at bottom left, rgba(16, 185, 129, 0.18), transparent 28%),
+    linear-gradient(180deg, #06281f 0%, #041711 46%, #020c09 100%);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(120deg, rgba(255, 255, 255, 0.03), transparent 30%),
+    repeating-linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.015) 0,
+      rgba(255, 255, 255, 0.015) 2px,
+      transparent 2px,
+      transparent 16px
+    );
+  opacity: 0.4;
+}
+
+.board-shell {
+  background:
+    linear-gradient(135deg, rgba(254, 243, 199, 0.15), rgba(251, 191, 36, 0.04)),
+    linear-gradient(145deg, rgba(6, 78, 59, 0.86), rgba(2, 44, 34, 0.96));
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 30px 70px rgba(0, 0, 0, 0.38),
+    0 8px 24px rgba(3, 7, 18, 0.4);
+}
+
+.board-surface {
+  background:
+    radial-gradient(circle at center, rgba(251, 191, 36, 0.08), transparent 36%),
+    linear-gradient(145deg, rgba(4, 40, 31, 0.96), rgba(5, 24, 20, 0.98));
+  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.14);
+}
+
+.board-center {
+  background:
+    radial-gradient(circle at center, rgba(245, 158, 11, 0.14), transparent 38%),
+    linear-gradient(145deg, rgba(8, 47, 39, 0.9), rgba(5, 21, 18, 0.98));
+}
+
+.india-board-glow {
+  background:
+    radial-gradient(circle, rgba(251, 191, 36, 0.1), transparent 45%),
+    radial-gradient(circle at 20% 20%, rgba(250, 204, 21, 0.1), transparent 20%),
+    radial-gradient(circle at 80% 80%, rgba(34, 197, 94, 0.12), transparent 22%);
+  animation: boardGlow 6s ease-in-out infinite;
+}
+
+.board-tile {
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.24), transparent),
+    linear-gradient(145deg, rgba(11, 46, 36, 0.98), rgba(6, 24, 20, 0.98));
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.24);
+}
+
+.board-tile-shine {
+  background: linear-gradient(
+    115deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.06) 42%,
+    rgba(255, 255, 255, 0.14) 48%,
+    transparent 60%
+  );
+  transform: translateX(-120%) rotate(18deg);
+  animation: shimmerSweep 9s linear infinite;
+}
+
+.property-strip {
+  box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.18);
+}
+
+.premium-card {
+  background:
+    linear-gradient(180deg, rgba(120, 53, 15, 0.5), rgba(68, 29, 8, 0.28)),
+    linear-gradient(145deg, rgba(255, 251, 235, 0.08), rgba(251, 191, 36, 0.08));
+  border: 1px solid rgba(251, 191, 36, 0.26);
+  border-radius: 1rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 28px rgba(0, 0, 0, 0.25);
+}
+
+.player-coin {
+  --coin-color: #f59e0b;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.45), transparent 30%),
+    linear-gradient(145deg, color-mix(in srgb, var(--coin-color) 78%, white 22%), var(--coin-color));
+  box-shadow:
+    0 0 0 2px rgba(15, 23, 42, 0.45),
+    0 8px 18px rgba(0, 0, 0, 0.34);
+}
+
+.dice-cube {
+  width: 3.4rem;
+  height: 3.4rem;
+  padding: 0.45rem;
+  border-radius: 1rem;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.82) 42%, rgba(203, 213, 225, 0.95) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -3px 10px rgba(148, 163, 184, 0.45),
+    0 14px 26px rgba(0, 0, 0, 0.3);
+}
+
+@media (min-width: 768px) {
+  .dice-cube {
+    width: 4rem;
+    height: 4rem;
+  }
 }
 
 /* Scrollbar styling */

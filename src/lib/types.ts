@@ -1,4 +1,9 @@
-import type { GameState } from "./game-engine";
+import type {
+  GameState,
+  HouseRules,
+  PendingAuctionState,
+  PendingTradeState,
+} from "./game-engine";
 import type { GameCard } from "./monopoly-data";
 import type { PresenceStatus } from "./presence";
 
@@ -34,6 +39,14 @@ export interface RoomData {
   gameState: GameState;
   updatedAt: string;
 }
+
+export interface HouseRulesPatch {
+  houseRules: Partial<HouseRules>;
+}
+
+export interface AuctionData extends PendingAuctionState {}
+
+export interface TradeData extends PendingTradeState {}
 
 export interface LogEntry {
   id: string;

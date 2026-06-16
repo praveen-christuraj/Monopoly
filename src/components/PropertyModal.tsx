@@ -1,6 +1,7 @@
 "use client";
 
 import { BOARD_SPACES, COLOR_GROUP_CSS } from "@/lib/monopoly-data";
+import { formatCurrency } from "@/lib/formatters";
 import type { PlayerData } from "@/lib/types";
 import type { GameState } from "@/lib/game-engine";
 
@@ -34,7 +35,7 @@ export default function PropertyModal({
       onClick={onClose}
     >
       <div
-        className="bg-emerald-900 rounded-2xl border border-emerald-700 max-w-sm w-full shadow-2xl animate-fade-in overflow-hidden"
+        className="bg-emerald-950 rounded-2xl border border-amber-400/20 max-w-sm w-full shadow-2xl animate-fade-in overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Color header */}
@@ -60,7 +61,7 @@ export default function PropertyModal({
           {space.price && (
             <div className="flex items-center justify-between text-sm">
               <span className="text-emerald-400">Price</span>
-              <span className="font-bold text-amber-400">${space.price}</span>
+              <span className="font-bold text-amber-400">{formatCurrency(space.price)}</span>
             </div>
           )}
 
@@ -71,14 +72,14 @@ export default function PropertyModal({
               <div className="space-y-1 text-xs">
                 <div className="flex justify-between">
                   <span>Base rent</span>
-                  <span className="font-medium">${space.rent[0]}</span>
+                  <span className="font-medium">{formatCurrency(space.rent[0])}</span>
                 </div>
                 {space.rent.slice(1).map((r, i) => (
                   <div key={i} className="flex justify-between">
                     <span>
                       {i < 4 ? `With ${i + 1} house${i > 0 ? "s" : ""}` : "With hotel"}
                     </span>
-                    <span className="font-medium">${r}</span>
+                    <span className="font-medium">{formatCurrency(r)}</span>
                   </div>
                 ))}
               </div>
@@ -89,7 +90,7 @@ export default function PropertyModal({
           {space.houseCost && (
             <div className="flex items-center justify-between text-sm">
               <span className="text-emerald-400">House Cost</span>
-              <span>${space.houseCost}</span>
+              <span>{formatCurrency(space.houseCost)}</span>
             </div>
           )}
 
@@ -97,7 +98,7 @@ export default function PropertyModal({
           {space.mortgageValue && (
             <div className="flex items-center justify-between text-sm">
               <span className="text-emerald-400">Mortgage Value</span>
-              <span>${space.mortgageValue}</span>
+              <span>{formatCurrency(space.mortgageValue)}</span>
             </div>
           )}
 
@@ -105,7 +106,7 @@ export default function PropertyModal({
           {space.taxAmount && (
             <div className="flex items-center justify-between text-sm">
               <span className="text-emerald-400">Tax Amount</span>
-              <span className="text-red-400 font-bold">${space.taxAmount}</span>
+              <span className="text-red-400 font-bold">{formatCurrency(space.taxAmount)}</span>
             </div>
           )}
 

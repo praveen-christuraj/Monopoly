@@ -1,6 +1,7 @@
 "use client";
 
 import { BOARD_SPACES, COLOR_GROUP_CSS, PLAYER_TOKENS } from "@/lib/monopoly-data";
+import { formatCurrency } from "@/lib/formatters";
 import type { PlayerData } from "@/lib/types";
 import type { GameState } from "@/lib/game-engine";
 
@@ -88,7 +89,7 @@ export default function PlayerPanel({
                 </div>
               </div>
               <span className="text-amber-400 font-bold text-sm">
-                ${player.money.toLocaleString()}
+                {formatCurrency(player.money)}
               </span>
             </div>
 

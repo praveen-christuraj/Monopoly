@@ -4,6 +4,7 @@ import { rooms, players, gameLog } from "@/db/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { getSessionUser } from "@/lib/auth";
 import { getPresenceStatus } from "@/lib/presence";
+import { normalizeGameState, type GameState } from "@/lib/game-engine";
 
 export async function GET(
   _request: Request,
@@ -55,6 +56,8 @@ export async function GET(
       .orderBy(desc(gameLog.createdAt))
       .limit(30);
 
+    const gameState = normalizeGameState(room.gameState as Partial<GameState>);
+
     return NextResponse.json({
       room: {
         id: room.id,
@@ -65,7 +68,7 @@ export async function GET(
         maxPlayers: room.maxPlayers,
         currentTurnIndex: room.currentTurnIndex,
         stateVersion: room.stateVersion,
-        gameState: room.gameState,
+        gameState,
         updatedAt: room.updatedAt,
       },
       players: roomPlayers.map((p) => ({
