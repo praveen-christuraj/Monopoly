@@ -1,0 +1,11 @@
+{
+  "name": "Monopoly Online",
+  "short_name": "Monopoly",
+  "description": "Play Monopoly online with friends!",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d3320",
+  "theme_color": "#1a5c2a",
+  "orientation": "portrait",
+  "icons": []
+}
