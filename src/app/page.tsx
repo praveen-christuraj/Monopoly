@@ -1,11 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AuthUser, MyRoomSummary } from "@/lib/types";
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 export default function HomePage() {
   const router = useRouter();
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [view, setView] = useState<"home" | "create" | "join" | "login" | "signup">("home");
   const [user, setUser] = useState<AuthUser | null>(null);
   const [rooms, setRooms] = useState<MyRoomSummary[]>([]);
@@ -17,7 +19,36 @@ export default function HomePage() {
   const [maxPlayers, setMaxPlayers] = useState(4);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [authExpired, setAuthExpired] = useState(false);
+
+  const syncSupabaseSession = useCallback(async () => {
+    if (!supabase) {
+      throw new Error("Supabase is not configured in the browser");
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      return null;
+    }
+
+    const res = await fetch("/api/auth/sync", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || "Failed to sync your account session");
+    }
+
+    return data.user as AuthUser;
+  }, [supabase]);
 
   const loadRooms = useCallback(async () => {
     const res = await fetch("/api/me/rooms", { cache: "no-store" });
@@ -36,6 +67,14 @@ export default function HomePage() {
     try {
       const res = await fetch("/api/auth/me", { cache: "no-store" });
       if (res.status === 401) {
+        const syncedUser = await syncSupabaseSession().catch(() => null);
+        if (syncedUser) {
+          setUser(syncedUser);
+          await loadRooms();
+          setAuthExpired(false);
+          return;
+        }
+
         setUser(null);
         setRooms([]);
         return;
@@ -53,7 +92,7 @@ export default function HomePage() {
     } finally {
       setBooting(false);
     }
-  }, [loadRooms]);
+  }, [loadRooms, syncSupabaseSession]);
 
   useEffect(() => {
     const initialLoad = window.setTimeout(() => {
@@ -87,20 +126,39 @@ export default function HomePage() {
 
     setLoading(true);
     setError("");
+    setNotice("");
     setAuthExpired(false);
     try {
-      const res = await fetch("/api/auth/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: email.trim(),
-          password,
-          displayName: displayName.trim(),
-        }),
+      if (!supabase) {
+        throw new Error("Supabase is not configured");
+      }
+
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: {
+          data: {
+            display_name: displayName.trim(),
+          },
+        },
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setUser(data.user);
+
+      if (signUpError) throw signUpError;
+
+      if (!data.session) {
+        setNotice(
+          "Account created. If email confirmation is enabled in Supabase, confirm your email and then log in."
+        );
+        setView("login");
+        return;
+      }
+
+      const syncedUser = await syncSupabaseSession();
+      if (!syncedUser) {
+        throw new Error("Failed to start your app session after signup");
+      }
+
+      setUser(syncedUser);
       setView("home");
       await loadRooms();
     } catch (err: unknown) {
@@ -118,19 +176,26 @@ export default function HomePage() {
 
     setLoading(true);
     setError("");
+    setNotice("");
     setAuthExpired(false);
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: email.trim(),
-          password,
-        }),
+      if (!supabase) {
+        throw new Error("Supabase is not configured");
+      }
+
+      const { error: loginError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setUser(data.user);
+
+      if (loginError) throw loginError;
+
+      const syncedUser = await syncSupabaseSession();
+      if (!syncedUser) {
+        throw new Error("Failed to start your app session after login");
+      }
+
+      setUser(syncedUser);
       setView("home");
       await loadRooms();
     } catch (err: unknown) {
@@ -143,7 +208,11 @@ export default function HomePage() {
   async function handleLogout() {
     setLoading(true);
     setError("");
+    setNotice("");
     try {
+      if (supabase) {
+        await supabase.auth.signOut();
+      }
       await fetch("/api/auth/logout", { method: "POST" });
       setUser(null);
       setRooms([]);
@@ -317,6 +386,12 @@ export default function HomePage() {
               <p className="text-red-400 text-sm bg-red-900/30 px-3 py-2 rounded-lg">{error}</p>
             )}
 
+            {notice && (
+              <p className="text-emerald-300 text-sm bg-emerald-900/30 px-3 py-2 rounded-lg">
+                {notice}
+              </p>
+            )}
+
             {authExpired && (
               <p className="text-amber-300 text-sm bg-amber-900/30 px-3 py-2 rounded-lg">
                 Your session expired. Log in again to resume your games.
@@ -442,6 +517,11 @@ export default function HomePage() {
               {error && (
                 <p className="text-red-400 text-sm bg-red-900/30 px-3 py-2 rounded-lg">{error}</p>
               )}
+              {notice && (
+                <p className="text-emerald-300 text-sm bg-emerald-900/30 px-3 py-2 rounded-lg">
+                  {notice}
+                </p>
+              )}
               <button
                 onClick={handleLogin}
                 disabled={loading}
@@ -496,6 +576,11 @@ export default function HomePage() {
               </div>
               {error && (
                 <p className="text-red-400 text-sm bg-red-900/30 px-3 py-2 rounded-lg">{error}</p>
+              )}
+              {notice && (
+                <p className="text-emerald-300 text-sm bg-emerald-900/30 px-3 py-2 rounded-lg">
+                  {notice}
+                </p>
               )}
               <button
                 onClick={handleSignup}
