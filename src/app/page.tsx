@@ -30,6 +30,26 @@ export default function HomePage() {
     const {
       data: { session },
     } = await supabase.auth.getSession();
+    // #region debug-point A:browser-session-check
+    fetch("http://127.0.0.1:7777/event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "auth-sync-failure",
+        runId: "pre-fix",
+        hypothesisId: "A",
+        location: "src/app/page.tsx:32",
+        msg: "[DEBUG] Browser checked Supabase session before sync",
+        data: {
+          hasSession: Boolean(session),
+          hasAccessToken: Boolean(session?.access_token),
+          userId: session?.user?.id ?? null,
+          email: session?.user?.email ?? null,
+        },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
 
     if (!session?.access_token) {
       return null;
@@ -42,6 +62,26 @@ export default function HomePage() {
       },
     });
     const data = await res.json();
+    // #region debug-point E:browser-sync-response
+    fetch("http://127.0.0.1:7777/event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "auth-sync-failure",
+        runId: "pre-fix",
+        hypothesisId: "E",
+        location: "src/app/page.tsx:45",
+        msg: "[DEBUG] Browser received auth sync response",
+        data: {
+          ok: res.ok,
+          status: res.status,
+          error: data?.error ?? null,
+          userId: data?.user?.id ?? null,
+        },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
 
     if (!res.ok) {
       throw new Error(data.error || "Failed to sync your account session");
@@ -142,6 +182,26 @@ export default function HomePage() {
           },
         },
       });
+      // #region debug-point A:browser-signup-result
+      fetch("http://127.0.0.1:7777/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: "auth-sync-failure",
+          runId: "pre-fix",
+          hypothesisId: "A",
+          location: "src/app/page.tsx:147",
+          msg: "[DEBUG] Browser completed Supabase signup",
+          data: {
+            hasSession: Boolean(data.session),
+            userId: data.user?.id ?? null,
+            email: data.user?.email ?? null,
+            error: signUpError?.message ?? null,
+          },
+          ts: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
 
       if (signUpError) throw signUpError;
 
@@ -187,6 +247,24 @@ export default function HomePage() {
         email: email.trim(),
         password,
       });
+      // #region debug-point A:browser-login-result
+      fetch("http://127.0.0.1:7777/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: "auth-sync-failure",
+          runId: "pre-fix",
+          hypothesisId: "A",
+          location: "src/app/page.tsx:193",
+          msg: "[DEBUG] Browser completed Supabase login",
+          data: {
+            email: email.trim(),
+            error: loginError?.message ?? null,
+          },
+          ts: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
 
       if (loginError) throw loginError;
 

@@ -33,6 +33,25 @@ export function getBearerToken(request: Request): string | null {
 export async function getSupabaseAuthUser(accessToken: string) {
   const supabase = getSupabaseServerClient();
   const { data, error } = await supabase.auth.getUser(accessToken);
+  // #region debug-point B:supabase-auth-user
+  fetch("http://127.0.0.1:7777/event", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sessionId: "auth-sync-failure",
+      runId: "pre-fix",
+      hypothesisId: "B",
+      location: "src/lib/auth.ts:35",
+      msg: "[DEBUG] Supabase auth user lookup completed",
+      data: {
+        hasUser: Boolean(data.user),
+        email: data.user?.email ?? null,
+        error: error ? { name: error.name, message: error.message, status: error.status ?? null } : null,
+      },
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
 
   if (error || !data.user?.email) {
     return null;
@@ -45,6 +64,21 @@ export async function createSession(userId: string): Promise<void> {
   const rawToken = randomBytes(32).toString("hex");
   const tokenHash = hashToken(rawToken);
   const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);
+  // #region debug-point D:create-session-start
+  fetch("http://127.0.0.1:7777/event", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sessionId: "auth-sync-failure",
+      runId: "pre-fix",
+      hypothesisId: "D",
+      location: "src/lib/auth.ts:48",
+      msg: "[DEBUG] Starting local session creation",
+      data: { userId, expiresAt: expiresAt.toISOString() },
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
 
   await db.insert(sessions).values({
     tokenHash,
@@ -61,6 +95,21 @@ export async function createSession(userId: string): Promise<void> {
     path: "/",
     expires: expiresAt,
   });
+  // #region debug-point D:create-session-success
+  fetch("http://127.0.0.1:7777/event", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sessionId: "auth-sync-failure",
+      runId: "pre-fix",
+      hypothesisId: "D",
+      location: "src/lib/auth.ts:73",
+      msg: "[DEBUG] Local session persisted and cookie set",
+      data: { userId },
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
 }
 
 export async function clearSession(): Promise<void> {
@@ -84,6 +133,25 @@ export async function clearSession(): Promise<void> {
 
 export async function upsertAppUserFromSupabase(accessToken: string) {
   const supabaseUser = await getSupabaseAuthUser(accessToken);
+  // #region debug-point C:upsert-input
+  fetch("http://127.0.0.1:7777/event", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sessionId: "auth-sync-failure",
+      runId: "pre-fix",
+      hypothesisId: "C",
+      location: "src/lib/auth.ts:105",
+      msg: "[DEBUG] Preparing app user upsert from Supabase user",
+      data: {
+        hasSupabaseUser: Boolean(supabaseUser),
+        userId: supabaseUser?.id ?? null,
+        email: supabaseUser?.email ?? null,
+      },
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
   if (!supabaseUser?.email) {
     return null;
   }
@@ -113,6 +181,21 @@ export async function upsertAppUserFromSupabase(accessToken: string) {
       email: users.email,
       displayName: users.displayName,
     });
+  // #region debug-point C:upsert-output
+  fetch("http://127.0.0.1:7777/event", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sessionId: "auth-sync-failure",
+      runId: "pre-fix",
+      hypothesisId: "C",
+      location: "src/lib/auth.ts:139",
+      msg: "[DEBUG] App user upsert completed",
+      data: { appUserId: appUser?.id ?? null, email: appUser?.email ?? null, displayName: appUser?.displayName ?? null },
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
 
   return appUser;
 }
