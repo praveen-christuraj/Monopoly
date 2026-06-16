@@ -111,6 +111,50 @@ function renderLogDetails(log: LogEntry) {
     );
   }
 
+  if (type === "buy-property") {
+    const propertyName = getDetailString(log.details, "propertyName");
+    const amount = getDetailNumber(log.details, "amount");
+    return (
+      <div className="mt-1 rounded-lg bg-lime-950/35 px-2 py-1.5 text-[11px] text-lime-100/80">
+        {propertyName && <div>Property: {propertyName}</div>}
+        {typeof amount === "number" && <div>Price: {formatCurrency(amount)}</div>}
+      </div>
+    );
+  }
+
+  if (type === "auction-bid" || type === "auction-win" || type === "auction-end") {
+    const propertyName = getDetailString(log.details, "propertyName");
+    const playerName = getDetailString(log.details, "playerName");
+    const amount = getDetailNumber(log.details, "amount");
+    return (
+      <div className="mt-1 rounded-lg bg-amber-950/40 px-2 py-1.5 text-[11px] text-amber-100/80">
+        {propertyName && <div>Property: {propertyName}</div>}
+        {playerName && <div>Player: {playerName}</div>}
+        {typeof amount === "number" && <div>Amount: {formatCurrency(amount)}</div>}
+      </div>
+    );
+  }
+
+  if (type === "jail") {
+    const status = getDetailString(log.details, "status");
+    const amount = getDetailNumber(log.details, "amount");
+    return (
+      <div className="mt-1 rounded-lg bg-violet-950/40 px-2 py-1.5 text-[11px] text-violet-100/80">
+        {status && <div>Status: {status}</div>}
+        {typeof amount === "number" && <div>Amount: {formatCurrency(amount)}</div>}
+      </div>
+    );
+  }
+
+  if (type === "tax" || type === "go-salary" || type === "rent") {
+    const amount = getDetailNumber(log.details, "amount");
+    return (
+      <div className="mt-1 rounded-lg bg-slate-950/35 px-2 py-1.5 text-[11px] text-slate-100/80">
+        {typeof amount === "number" && <div>Amount: {formatCurrency(amount)}</div>}
+      </div>
+    );
+  }
+
   return null;
 }
 

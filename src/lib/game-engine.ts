@@ -78,6 +78,9 @@ export interface GameState {
   speedDieUnlockedPlayerIds: string[];
   houseRules: HouseRules;
   winnerId: string | null;
+  abortedByPlayerId: string | null;
+  abortedByPlayerName: string | null;
+  abortReason: string | null;
   turnCount: number;
 }
 
@@ -127,6 +130,9 @@ export function createInitialGameState(
     speedDieUnlockedPlayerIds: [],
     houseRules: normalizeHouseRules(houseRules),
     winnerId: null,
+    abortedByPlayerId: null,
+    abortedByPlayerName: null,
+    abortReason: null,
     turnCount: 0,
   };
 }
@@ -193,6 +199,9 @@ export function normalizeGameState(
       : [],
     houseRules: normalizeHouseRules(input.houseRules),
     winnerId: input.winnerId ?? null,
+    abortedByPlayerId: input.abortedByPlayerId ?? null,
+    abortedByPlayerName: input.abortedByPlayerName ?? null,
+    abortReason: input.abortReason ?? null,
     turnCount: input.turnCount ?? 0,
   };
 }

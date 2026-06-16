@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BOARD_SPACES, COLOR_GROUP_CSS, PLAYER_TOKENS } from "@/lib/monopoly-data";
 import { formatCurrency } from "@/lib/formatters";
-import type { PlayerData } from "@/lib/types";
+import type { LogEntry, PlayerData } from "@/lib/types";
 import type { GameState, PropertyState } from "@/lib/game-engine";
 
 interface GameBoardProps {
   players: PlayerData[];
   gameState: GameState;
+  logs: LogEntry[];
   onSpaceClick?: (index: number) => void;
 }
 
@@ -86,9 +87,219 @@ function getSpeedDieLabel(face: GameState["lastSpeedDie"]) {
   return String(face);
 }
 
+function getDetailString(details: Record<string, unknown> | null, key: string) {
+  const value = details?.[key];
+  return typeof value === "string" ? value : null;
+}
+
+function getDetailNumber(details: Record<string, unknown> | null, key: string) {
+  const value = details?.[key];
+  return typeof value === "number" ? value : null;
+}
+
+type BoardEventTone =
+  | "success"
+  | "warning"
+  | "danger"
+  | "info"
+  | "auction"
+  | "card";
+
+interface BoardEvent {
+  id: string;
+  icon: string;
+  title: string;
+  subtitle: string;
+  tone: BoardEventTone;
+  spaceIndex: number | null;
+}
+
+function getPhaseGuide(gameState: GameState) {
+  switch (gameState.phase) {
+    case "roll":
+      return {
+        title: "Roll To Move",
+        subtitle: "Use the dice to start your turn and trigger the next board action.",
+      };
+    case "buy-decision":
+      return {
+        title: "Property Decision",
+        subtitle: "Buy the city you landed on or pass and let the auction begin.",
+      };
+    case "auction":
+      return {
+        title: "Auction Live",
+        subtitle: "Watch the leading bid and raise or pass before the city is claimed.",
+      };
+    case "trade-response":
+      return {
+        title: "Trade Pending",
+        subtitle: "Review the offer summary and accept, reject, or cancel it clearly.",
+      };
+    case "speed-die-choice":
+      return {
+        title: "Resolve Speed Die",
+        subtitle: "Pick the bus route, free destination, or bonus move shown on the board.",
+      };
+    case "end-turn":
+      return {
+        title: "Turn Ready To End",
+        subtitle: "Finish any final management actions, then pass play to the next player.",
+      };
+    default:
+      return {
+        title: "Manage Your Turn",
+        subtitle: "Build, mortgage, trade, or inspect the board to plan your next move.",
+      };
+  }
+}
+
+function getLatestBoardEvent(logs: LogEntry[], players: PlayerData[]): BoardEvent | null {
+  for (let index = logs.length - 1; index >= 0; index -= 1) {
+    const log = logs[index];
+    const type = getDetailString(log.details, "type");
+
+    if (type === "buy-property") {
+      const propertyName = getDetailString(log.details, "propertyName") ?? "Property";
+      const amount = getDetailNumber(log.details, "amount") ?? 0;
+      return {
+        id: log.id,
+        icon: "HOME",
+        title: `${propertyName} Purchased`,
+        subtitle: `${getDetailString(log.details, "playerName") ?? "A player"} paid ${formatCurrency(amount)} to claim it.`,
+        tone: "success",
+        spaceIndex: getDetailNumber(log.details, "spaceIndex"),
+      };
+    }
+
+    if (type === "go-salary") {
+      const amount = getDetailNumber(log.details, "amount") ?? 0;
+      return {
+        id: log.id,
+        icon: "GO",
+        title: "Passed GO",
+        subtitle: `Salary collected: ${formatCurrency(amount)}.`,
+        tone: "success",
+        spaceIndex: 0,
+      };
+    }
+
+    if (type === "tax") {
+      return {
+        id: log.id,
+        icon: "TAX",
+        title: "Tax Due",
+        subtitle: `Bank payment: ${formatCurrency(getDetailNumber(log.details, "amount") ?? 0)}.`,
+        tone: "warning",
+        spaceIndex: null,
+      };
+    }
+
+    if (type === "jail") {
+      const status = getDetailString(log.details, "status");
+      return {
+        id: log.id,
+        icon: "JAIL",
+        title:
+          status === "paid-release"
+            ? "Jail Fee Paid"
+            : status === "card-release"
+            ? "Jail Card Used"
+            : "Sent To Jail",
+        subtitle:
+          status === "paid-release"
+            ? `Release fee paid: ${formatCurrency(getDetailNumber(log.details, "amount") ?? 0)}.`
+            : status === "card-release"
+            ? "A Get Out of Jail Free card was spent."
+            : "Movement stops and the turn ends immediately.",
+        tone: "danger",
+        spaceIndex: getDetailNumber(log.details, "spaceIndex") ?? 10,
+      };
+    }
+
+    if (type === "card") {
+      const deck = getDetailString(log.details, "deck");
+      return {
+        id: log.id,
+        icon: deck === "chance" ? "CH?" : "CC",
+        title: deck === "chance" ? "Chance Card" : "Community Chest",
+        subtitle: getDetailString(log.details, "text") ?? log.action,
+        tone: "card",
+        spaceIndex: null,
+      };
+    }
+
+    if (type === "auction-bid") {
+      const propertyName = getDetailString(log.details, "propertyName") ?? "Property";
+      return {
+        id: log.id,
+        icon: "BID",
+        title: "New Auction Bid",
+        subtitle: `${getDetailString(log.details, "playerName") ?? "A player"} raised ${propertyName} to ${formatCurrency(getDetailNumber(log.details, "amount") ?? 0)}.`,
+        tone: "auction",
+        spaceIndex: getDetailNumber(log.details, "spaceIndex"),
+      };
+    }
+
+    if (type === "auction-win") {
+      const propertyName = getDetailString(log.details, "propertyName") ?? "Property";
+      return {
+        id: log.id,
+        icon: "WIN",
+        title: "Auction Won",
+        subtitle: `${getDetailString(log.details, "playerName") ?? "A player"} secured ${propertyName} for ${formatCurrency(getDetailNumber(log.details, "amount") ?? 0)}.`,
+        tone: "auction",
+        spaceIndex: getDetailNumber(log.details, "spaceIndex"),
+      };
+    }
+
+    if (type === "auction-end") {
+      return {
+        id: log.id,
+        icon: "PASS",
+        title: "Auction Closed",
+        subtitle: `${getDetailString(log.details, "propertyName") ?? "Property"} ended without a winning bid.`,
+        tone: "auction",
+        spaceIndex: getDetailNumber(log.details, "spaceIndex"),
+      };
+    }
+
+    if (type === "rent") {
+      const creditorId = getDetailString(log.details, "creditorPlayerId");
+      const creditorName =
+        players.find((player) => player.playerId === creditorId)?.name ?? "another owner";
+      return {
+        id: log.id,
+        icon: "RENT",
+        title: "Rent Paid",
+        subtitle: `${formatCurrency(getDetailNumber(log.details, "amount") ?? 0)} paid to ${creditorName}.`,
+        tone: "info",
+        spaceIndex: null,
+      };
+    }
+
+    if (type === "bankruptcy") {
+      const creditor = getDetailString(log.details, "creditor");
+      return {
+        id: log.id,
+        icon: "OUT",
+        title: "Bankruptcy",
+        subtitle: creditor
+          ? `Assets transferred while settling debt to ${creditor}.`
+          : "Assets were liquidated and the player left the game.",
+        tone: "danger",
+        spaceIndex: null,
+      };
+    }
+  }
+
+  return null;
+}
+
 export default function GameBoard({
   players,
   gameState,
+  logs,
   onSpaceClick,
 }: GameBoardProps) {
   const [displayedPositions, setDisplayedPositions] = useState<Record<string, number>>({});
@@ -168,6 +379,7 @@ export default function GameBoard({
 
     return grouped;
   }, [displayedPositions, players]);
+  const latestBoardEvent = useMemo(() => getLatestBoardEvent(logs, players), [logs, players]);
 
   const pendingAuction = gameState.pendingAuction;
   const auctionSpace = pendingAuction
@@ -189,6 +401,8 @@ export default function GameBoard({
   const highlightedRequestedSpaces = new Set(
     pendingTrade?.requestedPropertyIndexes ?? []
   );
+  const phaseGuide = getPhaseGuide(gameState);
+  const activeEvent = latestBoardEvent;
 
   function getPropertyState(spaceIndex: number): PropertyState | undefined {
     return gameState?.properties?.find((entry) => entry.spaceIndex === spaceIndex);
@@ -227,7 +441,40 @@ export default function GameBoard({
           }}
         >
           <div className="absolute inset-0 india-board-glow pointer-events-none" />
-          <div className="relative z-10 text-center px-4">
+          <div className="absolute inset-[8%] board-city-scene pointer-events-none">
+            <div className="city-ring-road city-ring-road-outer" />
+            <div className="city-ring-road city-ring-road-inner" />
+            <div className="city-park-core" />
+            <div className="city-landmark city-landmark-north" />
+            <div className="city-landmark city-landmark-east" />
+            <div className="city-landmark city-landmark-south" />
+            <div className="city-landmark city-landmark-west" />
+            {[
+              { left: "11%", top: "16%", height: "24%", tone: "#f97316" },
+              { left: "22%", top: "10%", height: "34%", tone: "#ef4444" },
+              { left: "33%", top: "18%", height: "27%", tone: "#94a3b8" },
+              { left: "58%", top: "12%", height: "36%", tone: "#facc15" },
+              { left: "70%", top: "18%", height: "30%", tone: "#22c55e" },
+              { left: "77%", top: "28%", height: "22%", tone: "#06b6d4" },
+              { left: "16%", top: "58%", height: "20%", tone: "#ec4899" },
+              { left: "28%", top: "68%", height: "28%", tone: "#7dd3fc" },
+              { left: "47%", top: "64%", height: "26%", tone: "#cbd5e1" },
+              { left: "63%", top: "62%", height: "22%", tone: "#38bdf8" },
+            ].map((tower, index) => (
+              <div
+                key={`${tower.left}-${tower.top}-${index}`}
+                className="city-tower"
+                style={{
+                  left: tower.left,
+                  top: tower.top,
+                  height: tower.height,
+                  ["--tower-tone" as string]: tower.tone,
+                }}
+              />
+            ))}
+          </div>
+
+          <div className="absolute inset-x-4 top-4 z-10 text-center">
             <p className="text-[10px] md:text-xs uppercase tracking-[0.55em] text-amber-200/70">
               India Edition
             </p>
@@ -235,18 +482,40 @@ export default function GameBoard({
               MONOPOLY
             </h2>
             <p className="text-[11px] md:text-sm text-emerald-100/80 mt-2">
-              Metro board • premium match table • rupee economy
+              Metro skyline board • premium match table • rupee economy
             </p>
+          </div>
+
+          <div className="relative z-10 w-full h-full px-4 pt-24 pb-5 flex flex-col items-center justify-between">
+            <div className="w-full max-w-[360px] space-y-3">
+              {activeEvent && (
+                <div className={`board-event-banner board-event-${activeEvent.tone}`}>
+                  <div className={`board-event-icon board-event-icon-${activeEvent.tone}`}>
+                    {activeEvent.icon}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[10px] uppercase tracking-[0.35em] text-amber-200/70">
+                      Latest Event
+                    </div>
+                    <div className="text-sm md:text-base font-black text-white mt-1">
+                      {activeEvent.title}
+                    </div>
+                    <div className="text-[11px] md:text-xs text-emerald-50/85 mt-1 leading-relaxed">
+                      {activeEvent.subtitle}
+                    </div>
+                  </div>
+                </div>
+              )}
 
             {gameState?.lastDice && (
-              <div className="mt-5 flex items-center justify-center gap-3">
+              <div className="flex items-center justify-center gap-3">
                 <DiceFace value={gameState.lastDice[0]} rolling={isRollingDice} />
                 <DiceFace value={gameState.lastDice[1]} rolling={isRollingDice} />
               </div>
             )}
 
             {(gameState?.lastSpeedDie || gameState?.pendingSpeedDie) && (
-              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              <div className="flex flex-wrap items-center justify-center gap-2">
                 {gameState.lastSpeedDie && (
                   <div className="premium-card px-3 py-2 text-left">
                     <div className="text-[10px] uppercase tracking-[0.35em] text-amber-300/80">
@@ -275,7 +544,7 @@ export default function GameBoard({
             )}
 
             {pendingAuction && auctionSpace && (
-              <div className="mt-5 max-w-[280px] mx-auto premium-card p-3 text-left border border-amber-400/20">
+              <div className="max-w-[280px] mx-auto premium-card p-3 text-left border border-amber-400/20">
                 <div className="text-[10px] uppercase tracking-[0.35em] text-amber-300/80">
                   Live Auction
                 </div>
@@ -292,7 +561,7 @@ export default function GameBoard({
             )}
 
             {pendingTrade && tradeFromPlayer && tradeToPlayer && (
-              <div className="mt-5 max-w-[320px] mx-auto premium-card p-3 text-left border border-emerald-400/20">
+              <div className="max-w-[320px] mx-auto premium-card p-3 text-left border border-emerald-400/20">
                 <div className="text-[10px] uppercase tracking-[0.35em] text-emerald-300/80">
                   Pending Trade
                 </div>
@@ -325,7 +594,7 @@ export default function GameBoard({
             )}
 
             {gameState?.lastCard && (
-              <div className="mt-5 max-w-[240px] mx-auto premium-card p-3 text-left">
+              <div className="max-w-[240px] mx-auto premium-card p-3 text-left board-card-flip">
                 <div className="text-[10px] uppercase tracking-[0.35em] text-amber-300/80">
                   {gameState.lastCard.action === "get-out-of-jail"
                     ? "Special Card"
@@ -336,6 +605,29 @@ export default function GameBoard({
                 </div>
               </div>
             )}
+
+            </div>
+
+            <div className="w-full max-w-[360px] space-y-3">
+              <div className="premium-card p-3 text-left">
+                <div className="text-[10px] uppercase tracking-[0.35em] text-emerald-300/80">
+                  What Happens Now
+                </div>
+                <div className="text-sm font-bold text-amber-50 mt-1">
+                  {phaseGuide.title}
+                </div>
+                <div className="text-[11px] md:text-xs text-emerald-100/80 mt-1 leading-relaxed">
+                  {phaseGuide.subtitle}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap justify-center gap-2 text-[10px] md:text-[11px]">
+                <span className="board-help-pill">Tap any tile to inspect it</span>
+                <span className="board-help-pill">Colored dot = owner</span>
+                <span className="board-help-pill">H / HOTEL = buildings</span>
+                <span className="board-help-pill">BID / OFFER / WANT = live actions</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -355,6 +647,7 @@ export default function GameBoard({
           const isAuctionSpace = pendingAuction?.spaceIndex === space.index;
           const isTradeOffered = highlightedOfferedSpaces.has(space.index);
           const isTradeRequested = highlightedRequestedSpaces.has(space.index);
+          const isEventSpace = activeEvent?.spaceIndex === space.index;
 
           return (
             <button
@@ -364,6 +657,8 @@ export default function GameBoard({
               className={`relative overflow-hidden board-tile text-left transition-transform duration-200 hover:scale-[1.02] ${
                 isAuctionSpace
                   ? "ring-2 ring-amber-300/80 shadow-[0_0_18px_rgba(251,191,36,0.35)]"
+                  : isEventSpace
+                  ? "ring-2 ring-cyan-200/80 shadow-[0_0_22px_rgba(103,232,249,0.42)]"
                   : isTradeOffered
                   ? "ring-2 ring-emerald-300/70 shadow-[0_0_18px_rgba(16,185,129,0.25)]"
                   : isTradeRequested
@@ -404,6 +699,12 @@ export default function GameBoard({
                 </div>
               )}
 
+              {isEventSpace && !isAuctionSpace && (
+                <div className="absolute bottom-1 right-1 z-20 rounded-full bg-cyan-300/90 px-1.5 py-0.5 text-[8px] font-black tracking-[0.15em] text-slate-950 animate-pulse">
+                  LIVE
+                </div>
+              )}
+
               {isTradeOffered && (
                 <div className="absolute bottom-1 right-1 z-20 rounded-full bg-emerald-500/85 px-1.5 py-0.5 text-[8px] font-black tracking-[0.15em] text-slate-950">
                   OFFER
@@ -424,23 +725,23 @@ export default function GameBoard({
 
               <div className="relative z-10 h-full flex flex-col justify-between p-1.5 md:p-2">
                 <div>
-                  <div className="text-[7px] md:text-[9px] font-semibold tracking-[0.24em] text-amber-100/70 uppercase">
+                  <div className="text-[7px] md:text-[9px] font-semibold tracking-[0.24em] text-emerald-900/55 uppercase">
                     {getSpaceIcon(space)}
                   </div>
-                  <div className={`${isCorner ? "text-[9px] md:text-xs" : "text-[7px] md:text-[9px]"} font-semibold text-white leading-tight mt-1`}>
+                  <div className={`${isCorner ? "text-[9px] md:text-xs" : "text-[7px] md:text-[9px]"} font-semibold text-emerald-950/90 leading-tight mt-1`}>
                     {space.name}
                   </div>
                 </div>
 
                 {(space.type === "property" || space.type === "railroad" || space.type === "utility") &&
                   space.price && (
-                    <div className="text-[7px] md:text-[9px] text-amber-200/85 font-medium">
+                    <div className="text-[7px] md:text-[9px] text-emerald-950/75 font-bold">
                       {formatCurrency(space.price)}
                     </div>
                   )}
 
                 {space.type === "tax" && space.taxAmount && (
-                  <div className="text-[7px] md:text-[9px] text-rose-200/85 font-medium">
+                  <div className="text-[7px] md:text-[9px] text-rose-700/90 font-bold">
                     {formatCurrency(space.taxAmount)}
                   </div>
                 )}

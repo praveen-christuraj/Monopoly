@@ -7,7 +7,7 @@ import { getPresenceStatus } from "@/lib/presence";
 import { normalizeGameState, type GameState } from "@/lib/game-engine";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ roomId: string }> }
 ) {
   try {
@@ -20,6 +20,11 @@ export async function GET(
     }
 
     const { roomId } = await params;
+    const url = new URL(request.url);
+    const requestedStateVersion = Number.parseInt(
+      url.searchParams.get("stateVersion") ?? "",
+      10
+    );
 
     const [room] = await db.select().from(rooms).where(eq(rooms.id, roomId));
 
@@ -39,22 +44,32 @@ export async function GET(
       );
     }
 
-    await db
-      .update(players)
-      .set({ lastSeenAt: new Date() })
-      .where(eq(players.id, viewerPlayer.id));
+    const now = Date.now();
+    const heartbeatAgeMs =
+      now - new Date(viewerPlayer.lastSeenAt).getTime();
+    if (heartbeatAgeMs > 15_000) {
+      await db
+        .update(players)
+        .set({ lastSeenAt: new Date(now) })
+        .where(eq(players.id, viewerPlayer.id));
+    }
 
-    const roomPlayers = await db
-      .select()
-      .from(players)
-      .where(eq(players.roomId, roomId));
+    if (
+      Number.isInteger(requestedStateVersion) &&
+      requestedStateVersion === room.stateVersion
+    ) {
+      return new NextResponse(null, { status: 204 });
+    }
 
-    const logs = await db
-      .select()
-      .from(gameLog)
-      .where(eq(gameLog.roomId, roomId))
-      .orderBy(desc(gameLog.createdAt))
-      .limit(30);
+    const [roomPlayers, logs] = await Promise.all([
+      db.select().from(players).where(eq(players.roomId, roomId)),
+      db
+        .select()
+        .from(gameLog)
+        .where(eq(gameLog.roomId, roomId))
+        .orderBy(desc(gameLog.createdAt))
+        .limit(30),
+    ]);
 
     const gameState = normalizeGameState(room.gameState as Partial<GameState>);
 

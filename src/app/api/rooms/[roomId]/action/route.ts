@@ -55,6 +55,7 @@ const ALLOWED_ACTIONS = new Set([
   "reject-trade",
   "cancel-trade",
   "choose-speed-die",
+  "abort-game",
 ]);
 
 async function addLog(
@@ -558,7 +559,12 @@ async function resolveLanding(
       .where(eq(players.id, currentPlayer.id));
     gameState.phase = "end-turn";
     gameState.pendingSpeedDie = null;
-    await addLog(client, roomId, actingPlayerId, `${currentPlayer.name} goes to Jail! 🚔`);
+    await addLog(client, roomId, actingPlayerId, `${currentPlayer.name} goes to Jail! 🚔`, {
+      type: "jail",
+      status: "jailed",
+      spaceIndex: 10,
+      reason: "go-to-jail-space",
+    });
     return;
   }
 
@@ -1285,6 +1291,66 @@ export async function POST(
 
         await addLog(tx, roomId, actingPlayerId, "House rules updated.");
         return NextResponse.json({ success: true, houseRules: gameState.houseRules });
+      }
+
+      if (action === "abort-game") {
+        if (actingPlayerId !== room.hostId) {
+          return NextResponse.json(
+            { error: "Only the host can abort this game" },
+            { status: 403 }
+          );
+        }
+        if (room.status === "finished") {
+          return NextResponse.json(
+            { error: "This room is already closed" },
+            { status: 400 }
+          );
+        }
+
+        gameState.phase = "game-over";
+        gameState.winnerId = null;
+        gameState.pendingAction = null;
+        gameState.pendingAuction = null;
+        gameState.pendingTrade = null;
+        gameState.pendingSpeedDie = null;
+        gameState.lastSpeedDie = null;
+        gameState.lastCard = null;
+        gameState.abortedByPlayerId = actingPlayerId;
+        gameState.abortedByPlayerName = currentPlayer.name;
+        gameState.abortReason =
+          room.status === "waiting"
+            ? "The host closed the room before the game started."
+            : "The host aborted the active game.";
+
+        const updated = await updateRoomSnapshot(
+          tx,
+          roomId,
+          room.stateVersion,
+          {
+            status: "finished",
+            gameState,
+          },
+          "abort-game"
+        );
+        if (!updated) {
+          return staleStateResponse(room.stateVersion);
+        }
+
+        await addLog(
+          tx,
+          roomId,
+          actingPlayerId,
+          room.status === "waiting"
+            ? `${currentPlayer.name} closed the room.`
+            : `${currentPlayer.name} aborted the game.`,
+          {
+            type: "abort-game",
+            abortedByPlayerId: actingPlayerId,
+            abortedByPlayerName: currentPlayer.name,
+            roomStatusBeforeAbort: room.status,
+          }
+        );
+        return NextResponse.json({ success: true });
       }
 
       if (room.status !== "playing") {
@@ -2064,7 +2130,14 @@ export async function POST(
           tx,
           roomId,
           actingPlayerId,
-          `${currentPlayer.name} bought ${space.name} for ${formatCurrency(space.price)}! 🏠`
+          `${currentPlayer.name} bought ${space.name} for ${formatCurrency(space.price)}! 🏠`,
+          {
+            type: "buy-property",
+            playerName: currentPlayer.name,
+            spaceIndex: currentPlayer.position,
+            propertyName: space.name,
+            amount: space.price,
+          }
         );
         return NextResponse.json({ success: true });
       }
@@ -2184,7 +2257,14 @@ export async function POST(
             tx,
             roomId,
             actingPlayerId,
-            `${currentPlayer.name} bid ${formatCurrency(bidAmount)} for ${auctionSpace.name}.`
+            `${currentPlayer.name} bid ${formatCurrency(bidAmount)} for ${auctionSpace.name}.`,
+            {
+              type: "auction-bid",
+              playerName: currentPlayer.name,
+              amount: bidAmount,
+              spaceIndex: auction.spaceIndex,
+              propertyName: auctionSpace.name,
+            }
           );
           return NextResponse.json({ success: true });
         }
@@ -2254,7 +2334,14 @@ export async function POST(
             tx,
             roomId,
             winningPlayer.playerId,
-            `${winningPlayer.name} won the auction for ${auctionSpace.name} at ${formatCurrency(auction.currentBid)}.`
+            `${winningPlayer.name} won the auction for ${auctionSpace.name} at ${formatCurrency(auction.currentBid)}.`,
+            {
+              type: "auction-win",
+              playerName: winningPlayer.name,
+              amount: auction.currentBid,
+              spaceIndex: auction.spaceIndex,
+              propertyName: auctionSpace.name,
+            }
           );
           return NextResponse.json({ success: true });
         }
@@ -2276,7 +2363,13 @@ export async function POST(
             tx,
             roomId,
             null,
-            `Auction ended with no bids for ${auctionSpace.name}.`
+            `Auction ended with no bids for ${auctionSpace.name}.`,
+            {
+              type: "auction-end",
+              spaceIndex: auction.spaceIndex,
+              propertyName: auctionSpace.name,
+              outcome: "no-bids",
+            }
           );
           return NextResponse.json({ success: true });
         }
@@ -2294,7 +2387,13 @@ export async function POST(
           tx,
           roomId,
           actingPlayerId,
-          `${currentPlayer.name} passed on the auction for ${auctionSpace.name}.`
+          `${currentPlayer.name} passed on the auction for ${auctionSpace.name}.`,
+          {
+            type: "auction-pass",
+            playerName: currentPlayer.name,
+            spaceIndex: auction.spaceIndex,
+            propertyName: auctionSpace.name,
+          }
         );
         return NextResponse.json({ success: true });
       }
@@ -2594,7 +2693,12 @@ export async function POST(
           tx,
           roomId,
           actingPlayerId,
-          `${currentPlayer.name} paid ${formatCurrency(50)} to get out of Jail.`
+          `${currentPlayer.name} paid ${formatCurrency(50)} to get out of Jail.`,
+          {
+            type: "jail",
+            status: "paid-release",
+            amount: 50,
+          }
         );
         return NextResponse.json({ success: true });
       }
@@ -2638,7 +2742,11 @@ export async function POST(
           tx,
           roomId,
           actingPlayerId,
-          `${currentPlayer.name} used a Get Out of Jail Free card! 🎫`
+          `${currentPlayer.name} used a Get Out of Jail Free card! 🎫`,
+          {
+            type: "jail",
+            status: "card-release",
+          }
         );
         return NextResponse.json({ success: true });
       }

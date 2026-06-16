@@ -32,72 +32,107 @@ export default function GamePage({
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [selectedSpace, setSelectedSpace] = useState<number | null>(null);
   const [tab, setTab] = useState<"board" | "players" | "log">("board");
-  const refetchTimerRef = useRef<number | null>(null);
+  const fetchInFlightRef = useRef<Promise<void> | null>(null);
+  const queuedFetchRef = useRef(false);
+  const latestStateVersionRef = useRef<number>(-1);
+  const hasLoadedOnceRef = useRef(false);
+  const fetchStateRef = useRef<() => Promise<void>>(async () => {});
 
-  const fetchState = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/rooms/${roomId}/state`, {
-        cache: "no-store",
-      });
+  useEffect(() => {
+    latestStateVersionRef.current = state?.room.stateVersion ?? -1;
+  }, [state?.room.stateVersion]);
 
-      if (res.status === 401) {
-        setSessionExpired(true);
+  useEffect(() => {
+    hasLoadedOnceRef.current = hasLoadedOnce;
+  }, [hasLoadedOnce]);
+
+  useEffect(() => {
+    fetchStateRef.current = async () => {
+      if (fetchInFlightRef.current) {
+        queuedFetchRef.current = true;
+        await fetchInFlightRef.current;
         return;
       }
 
-      if (res.status === 403) {
-        setAccessDenied(true);
-        return;
-      }
+      const runFetch = (async () => {
+        try {
+          const currentStateVersion = latestStateVersionRef.current;
+          const search =
+            currentStateVersion >= 0
+              ? `?stateVersion=${currentStateVersion}`
+              : "";
+          const res = await fetch(`/api/rooms/${roomId}/state${search}`, {
+            cache: "no-store",
+          });
 
-      if (res.ok) {
-        const data = await res.json();
-        setState(data);
-        setSessionExpired(false);
-        setAccessDenied(false);
-        setHasLoadedOnce(true);
-        setError("");
-        setIsOffline(false);
-      }
-    } catch {
-      if (hasLoadedOnce) {
-        setError("Connection lost. Re-syncing...");
-        setIsOffline(true);
-      }
-    }
-  }, [hasLoadedOnce, roomId]);
+          if (res.status === 204) {
+            setError("");
+            setIsOffline(false);
+            return;
+          }
 
-  const scheduleFetchState = useCallback(() => {
-    if (refetchTimerRef.current) {
-      window.clearTimeout(refetchTimerRef.current);
-    }
+          if (res.status === 401) {
+            setSessionExpired(true);
+            return;
+          }
 
-    refetchTimerRef.current = window.setTimeout(() => {
-      void fetchState();
-      refetchTimerRef.current = null;
-    }, 200);
-  }, [fetchState]);
+          if (res.status === 403) {
+            setAccessDenied(true);
+            return;
+          }
+
+          if (res.ok) {
+            const data = await res.json();
+            setState(data);
+            setSessionExpired(false);
+            setAccessDenied(false);
+            setHasLoadedOnce(true);
+            setError("");
+            setIsOffline(false);
+          }
+        } catch {
+          if (hasLoadedOnceRef.current) {
+            setError("Connection lost. Re-syncing...");
+            setIsOffline(true);
+          }
+        } finally {
+          fetchInFlightRef.current = null;
+          if (queuedFetchRef.current) {
+            queuedFetchRef.current = false;
+            void fetchStateRef.current();
+          }
+        }
+      })();
+
+      fetchInFlightRef.current = runFetch;
+      await runFetch;
+    };
+  }, [roomId]);
+
+  const requestStateRefresh = useCallback(async () => {
+    await fetchStateRef.current();
+  }, []);
 
   // Poll for game state
   useEffect(() => {
     const initialSync = window.setTimeout(() => {
-      void fetchState();
+      void requestStateRefresh();
     }, 0);
     const interval = setInterval(() => {
       if (document.visibilityState === "visible") {
-        void fetchState();
+        void requestStateRefresh();
       }
-    }, supabase ? 15000 : 2000);
+    }, supabase ? 1200 : 800);
 
     const handleVisibleSync = () => {
       if (document.visibilityState === "visible") {
-        void fetchState();
+        void requestStateRefresh();
       }
     };
 
     const handleOnline = () => {
       setIsOffline(false);
-      void fetchState();
+      void requestStateRefresh();
     };
 
     const handleOffline = () => {
@@ -118,7 +153,7 @@ export default function GamePage({
       window.removeEventListener("offline", handleOffline);
       document.removeEventListener("visibilitychange", handleVisibleSync);
     };
-  }, [fetchState, supabase]);
+  }, [requestStateRefresh, supabase]);
 
   useEffect(() => {
     if (!supabase) {
@@ -130,13 +165,25 @@ export default function GamePage({
       .on(
         "postgres_changes",
         {
+          event: "UPDATE",
+          schema: "public",
+          table: "rooms",
+          filter: `id=eq.${roomId}`,
+        },
+        () => {
+          void requestStateRefresh();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
           event: "*",
           schema: "public",
           table: "room_events",
           filter: `room_id=eq.${roomId}`,
         },
         () => {
-          scheduleFetchState();
+          void requestStateRefresh();
         }
       )
       .subscribe((status) => {
@@ -150,13 +197,9 @@ export default function GamePage({
       });
 
     return () => {
-      if (refetchTimerRef.current) {
-        window.clearTimeout(refetchTimerRef.current);
-        refetchTimerRef.current = null;
-      }
       void supabase.removeChannel(channel);
     };
-  }, [roomId, scheduleFetchState, supabase]);
+  }, [requestStateRefresh, roomId, supabase]);
 
   async function handleAction(
     action: string,
@@ -188,7 +231,7 @@ export default function GamePage({
         }
       }
       // Immediately refresh state
-      await fetchState();
+      await requestStateRefresh();
     } catch {
       setError("Network error");
     } finally {
@@ -212,6 +255,19 @@ export default function GamePage({
     });
   }
 
+  async function abortGame() {
+    const confirmed = window.confirm(
+      state?.room.status === "waiting"
+        ? "Abort this room and close it for all players?"
+        : "Abort the current game for all players?"
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    await handleAction("abort-game");
+  }
+
   if (sessionExpired) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -229,7 +285,7 @@ export default function GamePage({
               Back to Lobby
             </button>
             <button
-              onClick={() => void fetchState()}
+              onClick={() => void requestStateRefresh()}
               className="w-full py-3 bg-emerald-800 hover:bg-emerald-700 rounded-xl"
             >
               Retry
@@ -439,17 +495,26 @@ export default function GamePage({
 
           {/* Start button */}
           {isHost && (
-            <button
-              onClick={() => handleAction("start-game")}
-              disabled={loading || players.length < 2}
-              className="w-full py-4 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-gray-900 font-bold text-lg rounded-2xl shadow-lg shadow-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
-            >
-              {players.length < 2
-                ? "Waiting for players..."
-                : loading
-                ? "Starting..."
-                : `🎲 Start Game (${players.length} players)`}
-            </button>
+            <div className="space-y-2">
+              <button
+                onClick={() => handleAction("start-game")}
+                disabled={loading || players.length < 2}
+                className="w-full py-4 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-gray-900 font-bold text-lg rounded-2xl shadow-lg shadow-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
+              >
+                {players.length < 2
+                  ? "Waiting for players..."
+                  : loading
+                  ? "Starting..."
+                  : `🎲 Start Game (${players.length} players)`}
+              </button>
+              <button
+                onClick={() => void abortGame()}
+                disabled={loading}
+                className="w-full py-3 bg-rose-900/70 hover:bg-rose-800 rounded-2xl text-rose-100 font-semibold border border-rose-500/30 disabled:opacity-50 transition-all active:scale-95"
+              >
+                Abort Room
+              </button>
+            </div>
           )}
           {!isHost && (
             <div className="text-center py-4 text-emerald-400/70 text-sm">
@@ -469,16 +534,27 @@ export default function GamePage({
 
   // ======== GAME OVER ========
   if (room.status === "finished" || gameState?.phase === "game-over") {
+    const wasAborted = Boolean(gameState?.abortedByPlayerId || gameState?.abortReason);
     const winner = players.find(
       (p) => p.playerId === gameState?.winnerId
     );
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4">
         <div className="text-center animate-fade-in">
-          <div className="text-7xl mb-4">🏆</div>
+          <div className="text-7xl mb-4">{wasAborted ? "🛑" : "🏆"}</div>
           <h1 className="text-3xl font-black text-amber-400 mb-2">
-            Game Over!
+            {wasAborted ? "Game Aborted" : "Game Over!"}
           </h1>
+          {wasAborted && (
+            <div className="mb-4">
+              <p className="text-lg text-emerald-200">
+                {gameState.abortedByPlayerName ?? "The host"} ended this room.
+              </p>
+              {gameState.abortReason && (
+                <p className="text-emerald-300/75 mt-1">{gameState.abortReason}</p>
+              )}
+            </div>
+          )}
           {winner && (
             <div className="mb-4">
               <p className="text-xl text-emerald-200">
@@ -534,11 +610,22 @@ export default function GamePage({
         <div className="bg-emerald-800/80 px-3 py-1 rounded-full">
           <span className="text-xs text-emerald-300 font-mono">{room.code}</span>
         </div>
-        {myPlayer && (
-          <div className="text-amber-400 font-bold text-sm">
-            {formatCurrency(myPlayer.money)}
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {isHost && room.status === "playing" && (
+            <button
+              onClick={() => void abortGame()}
+              disabled={loading}
+              className="px-3 py-1 rounded-full bg-rose-900/70 hover:bg-rose-800 text-[11px] font-semibold text-rose-100 border border-rose-500/30 disabled:opacity-50 transition-all"
+            >
+              Abort Game
+            </button>
+          )}
+          {myPlayer && (
+            <div className="text-amber-400 font-bold text-sm">
+              {formatCurrency(myPlayer.money)}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="px-3 py-1 text-[11px] text-center bg-emerald-950/60 text-emerald-300/80 border-b border-emerald-900/80">
@@ -598,7 +685,7 @@ export default function GamePage({
         >
           <span>{error}</span>
           <button
-            onClick={() => void fetchState()}
+            onClick={() => void requestStateRefresh()}
             className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 transition-colors"
           >
             Retry Sync
@@ -632,6 +719,7 @@ export default function GamePage({
             <GameBoard
               players={players}
               gameState={gameState}
+              logs={logs}
               onSpaceClick={setSelectedSpace}
             />
           </div>
@@ -665,6 +753,7 @@ export default function GamePage({
               <GameBoard
                 players={players}
                 gameState={gameState}
+                logs={logs}
                 onSpaceClick={setSelectedSpace}
               />
               <div className="mt-3 px-1">
